@@ -100,10 +100,10 @@ class SpecifiedMetaclass(type):
                 if ancestor is not None and hasattr(ancestor, slot):
                     setattr(param, slot, getattr(ancestor, slot))
 
-    def __setattr__(mcls, attrname, value):
+    def __setattr__(mcls, name, value):
         """
-        Implements `self.attrname = value` in a way that supports Param[eters].
-        If there is already a descriptor named attrname, and that
+        Implements `self.name = value` in a way that supports Param[eters].
+        If there is already a descriptor named name, and that
         descriptor is a Parameter, and the new value is *not* a Parameter,
         then call that Parameter's __set__ method with the specified value.
 
@@ -115,27 +115,29 @@ class SpecifiedMetaclass(type):
         Based on:
         https://github.com/pyviz/param/blob/master/param/parameterized.py#L1973
         """
-        # Find out if there's a Parameter called attrname as a class attribute
+        # Find out if there's a Parameter called name as a class attribute
         # of this class. If not, parameter is None.
-        parameter, owner = mcls.get_param_descriptor(attrname)
+        parameter, owner = mcls.get_param_descriptor(name)
 
         if parameter and not is_param(value):
             if owner != mcls:
                 parameter = copy.copy(parameter)
                 parameter.owner = mcls
-                type.__setattr__(mcls, attrname, parameter)
-            mcls.__dict__[attrname].__set__(None, value)
+                type.__setattr__(mcls, name, parameter)
+                mcls.spec[name] = parameter
+            mcls.__dict__[name].__set__(None, value)
 
         else:
-            type.__setattr__(mcls, attrname, value)
+            type.__setattr__(mcls, name, value)
 
             if is_param(value):
-                mcls.__param_inheritance(attrname, value)
+                mcls.__param_inheritance(name, value)
+                mcls.spec[name] = value
             else:
-                if not (attrname.startswith('_') or \
-                        attrname in ('name', 'spec')):
+                if not (name.startswith('_') or \
+                        name in ('name', 'spec')):
                     debug('setting non-Param class attribute '
-                         f'{mcls.__name__}.{attrname} to value {value!r}')
+                         f'{mcls.__name__}.{name} to value {value!r}')
 
     def get_param_descriptor(mcls, pname):
         """
