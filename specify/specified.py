@@ -20,49 +20,7 @@ from .param import Param
 
 
 class Specs(AttrDict):
-
-    """
-    Collection of accessible Param objects.
-    """
-
-    def __init__(self, obj, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self._initialized = False
-        self.obj = obj
-        if type(obj) in (type, SpecifiedMetaclass):
-            self.name = f'{obj.__name__}Specs'
-        else:
-            self.name = f'{obj.name}Specs'
-        self.out = ConsolePrinter(prefix=self.name, prefix_color='pink')
-        self.debug = self.out.debug
-        self._initialized = True
-
-    def __setattr__(self, name, value):
-        if name == '_initialized' or not self._initialized:
-            return object.__setattr__(self, name, value)
-        AttrDict.__setattr__(self, name, value)
-        if not is_param(value):
-            self.out('Set non-Param {value!r} to attr {name!r}', warning=True)
-
-    def __setitem__(self, name, value):
-        self.__setattr__(name, value)
-
-    def __str__(self):
-        indent = ' '*4
-        r = f'{self.name}('
-        if len(self):
-            r += '\n'
-        for k, v in self.items():
-            dflt = v.default
-            val = self.obj.__dict__.get(k)
-            if val == dflt:
-                line = f'{k} = {val!r},'
-            else:
-                line = hilite(f'{k} = {val!r}, [default: {dflt!r}]')
-            lines = line.split('\n')
-            for line in lines:
-                r += indent + line + '\n'
-        return r + ')'
+    pass
 
 
 class SpecifiedMetaclass(type):
@@ -82,37 +40,54 @@ class SpecifiedMetaclass(type):
     https://github.com/pyviz/param/blob/master/param/parameterized.py#L1848
     """
 
-    def __init__(mcls, name, bases, dict_):
-        """
-        Initializes all the Parameters by looking up appropriate default values
-        (__param_inheritance()) and setting name and attrname (_set_names()).
-        """
-        type.__init__(mcls, name, bases, dict_)
-        mcls.name = name
-
-        # Initialize all Params that are defined on the class
-        for pname, param in dict_.items():
-            if is_param(param):
-                param._set_names(pname)
-                mcls.__param_inheritance(pname, param)
-
-    def __new__(mcls, name, bases, dict_):
+    def __new__(metacls, name, bases, clsdict):
         """
         For each class, create a class attribute `spec` object that holds
         references to all Param objects that will be accessible to the class
-        and its instances.
+        and its instances across the inheritance hierarchy.
         """
-        cls = super().__new__(mcls, name, bases, dict_)
-        cls.spec = Specs(cls)
-        for parent in classlist(cls):
-            if not is_specified(parent):
-                continue
-            for name, value in vars(parent).items():
-                if is_param(value) and name != 'name':
-                    cls.spec[name] = value
-        return cls
+        specs = clsdict['spec'] = Specs()
+        for base in bases:
+            for superclass in classlist(base)[::-1]:
+                if not isinstance(superclass, metacls):
+                    continue
+                for key, value in vars(superclass).items():
+                    if key == 'name': continue
+                    if not is_param(value):
+                        continue
+                    if key in clsdict:
+                        clsvalue = clsdict[key]
+                        if is_param(clsvalue):
+                            continue
+                        p = type(value)(default=copy.deepcopy(clsvalue))
+                        specs[key] = clsdict[key] = p
+                        debug(f'copied ancestor for {key!r} in '
+                              f'{superclass!r} as {p!r}')
+                    else:
+                        specs[key] = value
+                        debug(f'found ancestor {key!r} in {superclass!r}')
 
-    def __param_inheritance(mcls, pname, param):
+        return super().__new__(metacls, name, bases, clsdict)
+
+    def __init__(cls, name, bases, clsdict):
+        """
+        Initializes all Params in the class __dict__ by looking up appropriate
+        default values (__param_inheritance) and setting both the 'external'
+        descriptor name and 'internal' attribute name (_set_names).
+        """
+        type.__init__(cls, name, bases, clsdict)
+        cls.name = name
+
+        # Initialize all Params by setting names and inheriting properties
+        for pname, param in clsdict.items():
+            if not is_param(param) or pname == 'name':
+                continue
+            param._set_names(pname)
+            cls.__param_inheritance(pname, param)
+            cls.spec[pname] = param
+            debug(f'initialized Param {pname!r} to {param!r}')
+
+    def __param_inheritance(cls, pname, param):
         """
         Look for Param values in superclasses of the Specified class.
 
@@ -125,7 +100,7 @@ class SpecifiedMetaclass(type):
             slots.update(dict.fromkeys(p_class.__slots__))
 
         # Set the owner slot as an instance attribute and prevent inheriting it
-        setattr(param, 'owner', mcls)
+        setattr(param, 'owner', cls)
         del slots['owner']
 
         # For each slot, search for the nearest superclass with a Param object
@@ -134,7 +109,7 @@ class SpecifiedMetaclass(type):
         # properties will propagate through the hierarchy of Specified classes.
 
         for slot in slots.keys():
-            superclasses = iter(classlist(mcls)[::-1])
+            superclasses = iter(classlist(cls)[::-1])
 
             while getattr(param, slot) is None:
                 try:
@@ -146,7 +121,7 @@ class SpecifiedMetaclass(type):
                 if ancestor is not None and hasattr(ancestor, slot):
                     setattr(param, slot, getattr(ancestor, slot))
 
-    def __setattr__(mcls, name, value):
+    def __setattr__(cls, name, value):
         """
         Implements `self.name = value` in a way that supports Param[eters].
         If there is already a descriptor named name, and that
@@ -163,29 +138,29 @@ class SpecifiedMetaclass(type):
         """
         # Find out if there's a Parameter called name as a class attribute
         # of this class. If not, parameter is None.
-        parameter, owner = mcls.get_param_descriptor(name)
+        parameter, owner = cls.get_param_descriptor(name)
 
         if parameter and not is_param(value):
-            if owner != mcls:
-                parameter = parameter.copy()
-                parameter.owner = mcls
-                type.__setattr__(mcls, name, parameter)
-                mcls.spec[name] = parameter
-            mcls.__dict__[name].__set__(None, value)
+            if owner != cls:
+                parameter = copy.copy(parameter)
+                parameter.owner = cls
+                type.__setattr__(cls, name, parameter)
+                cls.spec[name] = parameter
+            cls.__dict__[name].__set__(None, value)
 
         else:
-            type.__setattr__(mcls, name, value)
+            type.__setattr__(cls, name, value)
 
             if is_param(value):
-                mcls.__param_inheritance(name, value)
-                mcls.spec[name] = value
+                cls.__param_inheritance(name, value)
+                cls.spec[name] = value
             else:
                 if not (name.startswith('_') or \
                         name in ('name', 'spec')):
                     debug('setting non-Param class attribute '
-                         f'{mcls.__name__}.{name} to value {value!r}')
+                         f'{cls.__name__}.{name} to value {value!r}')
 
-    def get_param_descriptor(mcls, pname):
+    def get_param_descriptor(cls, pname):
         """
         Goes up the class hierarchy (starting from the current class) looking
         for a Parameter class attribute `pname`. As soon as one is found as
@@ -195,7 +170,7 @@ class SpecifiedMetaclass(type):
         Based on:
         https://github.com/pyviz/param/blob/master/param/parameterized.py#L2098
         """
-        classes = classlist(mcls)
+        classes = classlist(cls)
         for c in classes[::-1]:
             attribute = c.__dict__.get(pname)
             if is_param(attribute):
@@ -209,13 +184,12 @@ class Specified(TenkoObject, metaclass=SpecifiedMetaclass):
     Self-validating attribute stores of restricted key-value sets.
     """
 
-    def __init__(self, **keyvalues):
+    def __init__(self, **kwargs):
         """
         Class-scope parameter default values are instantiated in the object.
         """
         super().__init__()
         self._initialized = False
-        self.spec = Specs(self)
         self._widgets = {}
         self._watchers = {}
 
@@ -234,27 +208,39 @@ class Specified(TenkoObject, metaclass=SpecifiedMetaclass):
             key = param.attrname
             new_value_from_default = copy.deepcopy(param.default)
             self.__dict__[key] = new_value_from_default
+            self.debug(f'init {key!r} to default {new_value_from_default!r}')
 
         # Set the value of keyword arguments
-        for key, value in keyvalues.items():
+        for key, value in kwargs.items():
             if key == '_spec_class' and value != self.klass:
                 self.out(f'Serialized type name {value!r} does not match',
                          f'class {self.klass!r}', warning=True)
                 continue
-            descriptor = type(self).get_param_descriptor(key)[0]
+            descriptor, _ = type(self).get_param_descriptor(key)
             if not descriptor:
-                self.out(f'Setting non-Param attribute {key!r} to {value!r}',
+                self.out(f'Non-Param attribute {key!r} set to {value!r}',
                          warning=True)
             setattr(self, key, value)
+            debug(f'init {key!r} to {value!r} from kwargs')
 
         self._initialized = True
 
     def __str__(self):
-        return str(self.spec)
-
-    def __repr__(self):
-        p = ', '.join([f'{k}={repr(v)}' for k, v in self.items()])
-        return f'{self.klass}(name={name!r}, {p})'
+        indent = ' '*4
+        r = f'{self.name}('
+        if len(self.spec):
+            r += '\n'
+        for k, param in self.items():
+            dflt = param.default
+            val = getattr(self, param.attrname)
+            if val == dflt:
+                line = f'{k} = {val!r}'
+            else:
+                line = hilite(f'{k} = {val!r} [default: {dflt!r}]')
+            lines = line.split('\n')
+            for line in lines:
+                r += indent + line + '\n'
+        return r + ')'
 
     def __contains__(self, name):
         return name in self.spec
@@ -275,9 +261,7 @@ class Specified(TenkoObject, metaclass=SpecifiedMetaclass):
         for name, p in self.spec.items():
             yield (name, p)
 
-    items = params  # alias for to_dict() method
-
-    def values(self):
+    def items(self):
         """
         Iterate over (name, value) tuples for all current parameter values.
         """
@@ -291,11 +275,11 @@ class Specified(TenkoObject, metaclass=SpecifiedMetaclass):
         for name, p in self.params():
             yield (name, p.default)
 
-    def update(self, **kw):
+    def update(self, **kwargs):
         """
         Update parameter values from keyword arguments.
         """
-        for key, value in kw.items():
+        for key, value in kwargs.items():
             setattr(self, key, value)
 
     def reset(self):
@@ -310,18 +294,19 @@ class Specified(TenkoObject, metaclass=SpecifiedMetaclass):
         """
         # Use arguments or gather full list of parameter names with widgets
         if names:
-            names = [name for name in names if name in self]
+            names = list(filter(lambda n: n in self, names))
         else:
             names = [name for name, p in self.params() if hasattr(p, 'widget')
                      and p.widget is not None]
 
-        # If exclusions specified as list or singleton, remove from list
+        # If exclusions were specified, remove those items from the list
         if exclude is not None:
             exclude = tuple((exclude,))
             for exc in exclude:
                 if exc in names:
                     names.remove(exc)
 
+        # Remove handles to old widgets that are about to be replaced
         for name in self._widgets.keys():
             if name in names:
                 del self._widgets[name]
@@ -353,9 +338,7 @@ class Specified(TenkoObject, metaclass=SpecifiedMetaclass):
         def callback(*events):
             AnyBar.toggle()
             for event in events:
-                widget = event.obj
-                name = widget.name
-                setattr(self, name, event.new)
+                setattr(self, event.obj.name, event.new)
 
         # Register the callback with each of the sliders
         for name, widget in self._widgets.items():
@@ -383,7 +366,7 @@ class Specified(TenkoObject, metaclass=SpecifiedMetaclass):
             if is_specified(subtree):
                 value = subtree[name]
             if hasattr(value, 'items') or has:
-                self.as_dict(value, T[name])
+                self.to_dict(value, T[name])
                 continue
             if is_param(value):
                 T[name] = getattr(self, value.name)

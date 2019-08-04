@@ -31,19 +31,18 @@ class Param(object):
         self.owner = None
         self.attrname = None
 
-    def __str__(self):
+    def __repr__(self):
         indent = ' '*4
-        r = f'{self.__class__.__name__}(\n'
+        r = f'{self.__class__.__name__}('
+        empty = True
         for a in get_valued_slots(self):
             if a in ('owner', 'name', 'constant', 'attrname'):
                 continue
-            lines = f'{a} = {getattr(self, a)!r},'.split('\n')
-            for line in lines:
-                r += indent + line + '\n'
-        return r + ')'
-
-    def __repr__(self):
-        return str(self)
+            r += f'{a}={getattr(self, a)!r}, '
+            empty = False
+        if empty:
+            return r + ')'
+        return r[:-2] + ')'
 
     def pprint(self, hilite=True):
         """
@@ -67,31 +66,6 @@ class Param(object):
             else:
                 print(line)
 
-    def update(self, p):
-        """
-        Update slots with values from another Param instance.
-        """
-        for slot in get_all_slots(type(self)):
-            if hasattr(p, slot):
-                setattr(self, slot, getattr(p, slot))
-
-    def copy(self):
-        """
-        Create a shallow copy of this Param instance.
-        """
-        newparam = type(self)(**{slot:copy.copy(getattr(self, slot))
-                                 for slot in get_all_slots(type(self))
-                                 if slot != 'owner'})
-        newparam.owner = self.owner
-        return newparam
-
-    @classmethod
-    def _attrname(cls, name):
-        """
-        Name mangling for instance attributes of the parameter's current value.
-        """
-        return f'_{name}_specified_value'
-
     def _set_names(self, name):
         """
         Set public and internal names based on class-given name.
@@ -104,12 +78,11 @@ class Param(object):
                                  f'{self.name!r}, which was already assigned '
                                  f'by class {self.owner!r}. Param instances '
                                   'should only be owned by a single class.')
-
         self.name = name
-        self.attrname = type(self)._attrname(name)
+        self.attrname = f'_{name}_specified_value'
         debug(f'set names: {self.name!r} and {self.attrname!r}')
 
-    def __get__(self, obj, type_=None):
+    def __get__(self, obj, cls):
         """
         Return the Parameter value (default for classes, value for instances).
 
@@ -119,10 +92,8 @@ class Param(object):
         if obj is None:
             if self.default is None:
                 raise TypeError(f'No default value set for {self.name!r}')
-            result = self.default
-        else:
-            result = obj.__dict__.get(self.attrname, self.default)
-        return result
+            return self.default
+        return obj.__dict__.get(self.attrname, self.default)
 
     def __set__(self, obj, value):
         """
@@ -131,27 +102,14 @@ class Param(object):
         Based on:
         https://github.com/pyviz/param/blob/master/param/parameterized.py#L791
         """
-        if self.constant:
-            if obj is None:
-                self.default = value
-            elif not obj._initialized:
-                oldval = obj.__dict__[self.attrname]
-                if oldval != value:
-                    obj.debug(f'set {self.name!r} from {oldval!r} to '
-                              f'{value!r}')
-                obj.__dict__[self.attrname] = value
-            else:
-                raise TypeError(f'Constant parameter {self.name!r} cannot be '
-                                 'modified')
-        else:
-            if obj is None:
-                self.default = value
-            else:
-                oldval = obj.__dict__[self.attrname]
-                if oldval != value:
-                    obj.debug(f'set {self.name!r} from {oldval!r} to '
-                              f'{value!r}')
-                obj.__dict__[self.attrname] = value
+        if obj is None:
+            self.default = value
+            return
+        if self.constant and obj._initialized:
+            raise TypeError(f'Cannot modify constant parameter {self.name!r}')
+
+        obj.__dict__[self.attrname] = value
+        obj.debug(f'set {self.name!r} to {value!r}')
 
         if hasattr(obj, '_widgets') and self.name in obj._widgets:
             widget = obj._widgets[self.name]
