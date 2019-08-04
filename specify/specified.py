@@ -275,11 +275,15 @@ class Specified(TenkoObject, metaclass=SpecifiedMetaclass):
         for name, p in self.params():
             yield (name, p.default)
 
-    def update(self, **kwargs):
+    def update(self, *args, **kwargs):
         """
-        Update parameter values from keyword arguments.
+        Update parameter values from a positional mapping or keyword arguments.
         """
-        for key, value in kwargs.items():
+        assert len(args) < 2, 'up to 1 positional argument allowed'
+        d = {}
+        if args: d.update(args[0])
+        if kwargs: d.update(kwargs)
+        for key, value in d.items():
             setattr(self, key, value)
 
     def reset(self):
@@ -363,15 +367,10 @@ class Specified(TenkoObject, metaclass=SpecifiedMetaclass):
         if subtree is None:
             subtree = self.spec
         for name, value in subtree.items():
-            if is_specified(subtree):
-                value = subtree[name]
-            if hasattr(value, 'items') or has:
+            if hasattr(value, 'items'):
                 self.to_dict(value, T[name])
                 continue
-            if is_param(value):
-                T[name] = getattr(self, value.name)
-            else:
-                T[name] = value
+            T[name] = value
         if is_specified(subtree):
             T['_spec_class'] = self.klass
         return T
