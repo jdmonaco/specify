@@ -2,6 +2,8 @@
 Base class for inheritable parameters.
 """
 
+import copy
+
 from pouty.console import printf, debug
 
 from .utils import get_all_slots, get_occupied_slots, get_valued_slots
@@ -29,20 +31,28 @@ class Param(object):
         self.owner = None
         self.attrname = None
 
-    def __repr__(self):
-        attrs = [f'{a}={getattr(self, a)!r}' for a in get_valued_slots(self)
-                 if a not in ('owner', 'name', 'constant', 'attrname')]
-        attrlist = '(' + ', '.join(attrs) + ')'
-        return self.__class__.__name__ + attrlist
+    def __str__(self):
+        indent = ' '*4
+        r = f'{self.__class__.__name__}(\n'
+        for a in get_valued_slots(self):
+            if a in ('owner', 'name', 'constant', 'attrname'):
+                continue
+            lines = f'{a} = {getattr(self, a)!r},'.split('\n')
+            for line in lines:
+                r += indent + line + '\n'
+        return r + ')'
 
-    def print_all(self, hilite=True):
+    def __repr__(self):
+        return str(self)
+
+    def pprint(self, hilite=True):
         """
-        Print a list of all parameter properties and currently set values.
+        Print a highlighted list of parameter properties with current values.
         """
         all_slots = get_all_slots(type(self))
         col = max(map(len, all_slots))
         for slot in all_slots:
-            line = slot.ljust(col) + ' = '
+            line = '    - ' + slot.ljust(col) + ' = '
             val = None
             if hasattr(self, slot):
                 val = getattr(self, slot)
@@ -64,6 +74,16 @@ class Param(object):
         for slot in get_all_slots(type(self)):
             if hasattr(p, slot):
                 setattr(self, slot, getattr(p, slot))
+
+    def copy(self):
+        """
+        Create a shallow copy of this Param instance.
+        """
+        newparam = type(self)(**{slot:copy.copy(getattr(self, slot))
+                                 for slot in get_all_slots(type(self))
+                                 if slot != 'owner'})
+        newparam.owner = self.owner
+        return newparam
 
     @classmethod
     def _attrname(cls, name):

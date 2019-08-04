@@ -10,13 +10,59 @@ except ImportError:
     print('Warning: install `panel` to use interactive dashboards.')
 
 from pouty.anybar import AnyBar
-from pouty.console import debug
+from pouty.console import debug, ConsolePrinter, snow as hilite
 from roto.dicts import AttrDict, Tree
 from tenko.base import TenkoObject
 
 from .types import is_param, is_specified
 from .utils import classlist
 from .param import Param
+
+
+class Specs(AttrDict):
+
+    """
+    Collection of accessible Param objects.
+    """
+
+    def __init__(self, obj, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._initialized = False
+        self.obj = obj
+        if type(obj) in (type, SpecifiedMetaclass):
+            self.name = f'{obj.__name__}Specs'
+        else:
+            self.name = f'{obj.name}Specs'
+        self.out = ConsolePrinter(prefix=self.name, prefix_color='pink')
+        self.debug = self.out.debug
+        self._initialized = True
+
+    def __setattr__(self, name, value):
+        if name == '_initialized' or not self._initialized:
+            return object.__setattr__(self, name, value)
+        AttrDict.__setattr__(self, name, value)
+        if not is_param(value):
+            self.out('Set non-Param {value!r} to attr {name!r}', warning=True)
+
+    def __setitem__(self, name, value):
+        self.__setattr__(name, value)
+
+    def __str__(self):
+        indent = ' '*4
+        r = f'{self.name}('
+        if len(self):
+            r += '\n'
+        for k, v in self.items():
+            dflt = v.default
+            val = self.obj.__dict__.get(k)
+            if val == dflt:
+                line = f'{k} = {val!r},'
+            else:
+                line = hilite(f'{k} = {val!r}, [default: {dflt!r}]')
+            lines = line.split('\n')
+            for line in lines:
+                r += indent + line + '\n'
+        return r + ')'
 
 
 class SpecifiedMetaclass(type):
@@ -57,7 +103,7 @@ class SpecifiedMetaclass(type):
         and its instances.
         """
         cls = super().__new__(mcls, name, bases, dict_)
-        cls.spec = AttrDict()
+        cls.spec = Specs(cls)
         for parent in classlist(cls):
             if not is_specified(parent):
                 continue
@@ -121,7 +167,7 @@ class SpecifiedMetaclass(type):
 
         if parameter and not is_param(value):
             if owner != mcls:
-                parameter = copy.copy(parameter)
+                parameter = parameter.copy()
                 parameter.owner = mcls
                 type.__setattr__(mcls, name, parameter)
                 mcls.spec[name] = parameter
@@ -165,15 +211,11 @@ class Specified(TenkoObject, metaclass=SpecifiedMetaclass):
 
     def __init__(self, **keyvalues):
         """
-        Spec keyword arguments are stored in the attribute dict (__dict__).
-
-        I.e., the initial constructor keywords (and keywords of the optional
-        spec 'parent' object') are the only keyword values that will ever be
-        expressed by iteration.
+        Class-scope parameter default values are instantiated in the object.
         """
         super().__init__()
         self._initialized = False
-        self.spec = AttrDict()
+        self.spec = Specs(self)
         self._widgets = {}
         self._watchers = {}
 
@@ -207,17 +249,12 @@ class Specified(TenkoObject, metaclass=SpecifiedMetaclass):
 
         self._initialized = True
 
+    def __str__(self):
+        return str(self.spec)
+
     def __repr__(self):
-        if not hasattr(self, 'spec') or len(self.spec) == 0:
-            return self.klass + '()'
-        indent = ' '*4
-        r = self.name + f'<{self.klass}>' + '(\n'
-        for k, v in self.params():
-            v = self.spec[k]
-            lines = f'{k} = {repr(v)},'.split('\n')
-            for line in lines:
-                r += indent + line + '\n'
-        return r + ')'
+        p = ', '.join([f'{k}={repr(v)}' for k, v in self.items()])
+        return f'{self.klass}(name={name!r}, {p})'
 
     def __contains__(self, name):
         return name in self.spec
@@ -238,7 +275,7 @@ class Specified(TenkoObject, metaclass=SpecifiedMetaclass):
         for name, p in self.spec.items():
             yield (name, p)
 
-    items = params  # alias for as_dict() method
+    items = params  # alias for to_dict() method
 
     def values(self):
         """
@@ -334,7 +371,7 @@ class Specified(TenkoObject, metaclass=SpecifiedMetaclass):
         for name, widget in self._widgets.items():
             widget.param.unwatch(self._watchers[name])
 
-    def as_dict(self, subtree=None, T=None):
+    def to_dict(self, subtree=None, T=None):
         """
         Return a copy of the spec as a nested dict object.
         """
