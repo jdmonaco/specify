@@ -184,11 +184,10 @@ class Specified(TenkoObject, metaclass=SpecifiedMetaclass):
     Self-validating attribute stores of restricted key-value sets.
     """
 
-    def __init__(self, **kwargs):
+    def __init__(self, *, spec_produce=False, spec_consume=True, **kwargs):
         """
         Class-scope parameter default values are instantiated in the object.
         """
-        super().__init__()
         self._initialized = False
         self._widgets = {}
         self._watchers = {}
@@ -208,21 +207,37 @@ class Specified(TenkoObject, metaclass=SpecifiedMetaclass):
             key = param.attrname
             new_value_from_default = copy.deepcopy(param.default)
             self.__dict__[key] = new_value_from_default
-            self.debug(f'init {key!r} to default {new_value_from_default!r}')
+            debug(f'init {key!r} to default {new_value_from_default!r}')
 
         # Set the value of keyword arguments
+        to_consume = []
         for key, value in kwargs.items():
-            if key == '_spec_class' and value != self.klass:
-                self.out(f'Serialized type name {value!r} does not match',
-                         f'class {self.klass!r}', warning=True)
+            if key == '_spec_class' and value != self.__class__.__name__:
+                debug(f'Serialized type name {value!r} does not match',
+                      f'class {self.klass!r}')
                 continue
             descriptor, _ = type(self).get_param_descriptor(key)
-            if not descriptor:
-                self.out(f'Non-Param attribute {key!r} set to {value!r}',
-                         warning=True)
+            if key not in self.spec:
+                continue
             setattr(self, key, value)
+            to_consume.append(key)
             debug(f'init {key!r} to {value!r} from kwargs')
 
+        # From keyword options, either consume kwargs for Param values that
+        # were set and/or produce kwargs for all specs (`spec_produce=True`) or
+        # a subset of specs (`spec_produce=('spec1',...)`).
+        if spec_consume:
+            for key in to_consume:
+                del kwargs[key]
+        if spec_produce:
+            if spec_produce == True:
+                to_produce = tuple(self.spec.keys())
+            else:
+                to_produce = tuple(spec_produce)
+            for key in to_produce:
+                kwargs[key] = getattr(self, key)
+
+        super().__init__(**kwargs)
         self._initialized = True
 
     def __str__(self):
@@ -230,7 +245,7 @@ class Specified(TenkoObject, metaclass=SpecifiedMetaclass):
         r = f'{self.name}('
         if len(self.spec):
             r += '\n'
-        for k, param in self.items():
+        for k, param in self.params():
             dflt = param.default
             val = getattr(self, param.attrname)
             if val == dflt:

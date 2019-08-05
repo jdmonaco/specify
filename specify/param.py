@@ -109,14 +109,14 @@ class Param(object):
             raise TypeError(f'Cannot modify constant parameter {self.name!r}')
 
         obj.__dict__[self.attrname] = value
-        obj.debug(f'set {self.name!r} to {value!r}')
+        debug(f'set {self.name!r} to {value!r}')
 
         if hasattr(obj, '_widgets') and self.name in obj._widgets:
             widget = obj._widgets[self.name]
             if widget.value != value:
                 widget.value = value
                 widget.param.trigger('value')
-                obj.debug(f'updated widget {self.name!r} to {value!r}')
+                debug(f'updated widget {self.name!r} to {value!r}')
 
     def __getstate__(self):
         state = {}
