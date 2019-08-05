@@ -51,7 +51,7 @@ class Param(object):
         all_slots = get_all_slots(type(self))
         col = max(map(len, all_slots))
         for slot in all_slots:
-            line = '    - ' + slot.ljust(col) + ' = '
+            line = slot.ljust(col) + ' = '
             val = None
             if hasattr(self, slot):
                 val = getattr(self, slot)

@@ -10,8 +10,8 @@ except ImportError:
     print('Warning: install `panel` to use interactive dashboards.')
 
 from pouty.anybar import AnyBar
-from pouty.console import debug, ConsolePrinter, snow as hilite
-from roto.dicts import AttrDict, Tree
+from pouty.console import debug, ConsolePrinter, orange
+from roto.dicts import AttrDict, Tree, hilite, midlite, lolite
 from tenko.base import TenkoObject
 
 from .types import is_param, is_specified
@@ -86,6 +86,22 @@ class SpecifiedMetaclass(type):
             cls.__param_inheritance(pname, param)
             cls.spec[pname] = param
             debug(f'initialized Param {pname!r} to {param!r}')
+
+    def _add_param(cls, pname, param, default=None):
+        """
+        Add a Param object to this class instance.
+        """
+        if pname in cls.__dict__:
+            raise ValueError(f'Param {pname!r} conflicts with existing '
+                             f'attribute with value {cls.__dict__[pname]!r}')
+
+        param._set_names(pname)
+        cls.__param_inheritance(pname, param)
+        if default is not None:
+            param.default = copy.copy(default)
+        cls.__dict__[pname] = param
+        cls.spec[pname] = param
+        debug(f'added Param {pname!r} with value {param!r}')
 
     def __param_inheritance(cls, pname, param):
         """
@@ -235,27 +251,29 @@ class Specified(TenkoObject, metaclass=SpecifiedMetaclass):
             else:
                 to_produce = tuple(spec_produce)
             for key in to_produce:
+                if key in kwargs:
+                    continue
                 kwargs[key] = getattr(self, key)
 
         super().__init__(**kwargs)
         self._initialized = True
 
     def __str__(self):
-        indent = ' '*4
-        r = f'{self.name}('
+        indent = 4
+        prefix = ' '*indent
+        r = midlite(f'{self.name}(')
         if len(self.spec):
             r += '\n'
         for k, param in self.params():
             dflt = param.default
             val = getattr(self, param.attrname)
-            if val == dflt:
-                line = f'{k} = {val!r}'
-            else:
-                line = hilite(f'{k} = {val!r} [default: {dflt!r}]')
-            lines = line.split('\n')
+            l = hilite(f'{k}') + midlite(' = ') + lolite(f'{val!r}')
+            if val != dflt:
+                l += orange(' [default: {dflt!r}]')
+            lines = l.split('\n')
             for line in lines:
-                r += indent + line + '\n'
-        return r + ')'
+                r += prefix + line + '\n'
+        return r + midlite(')')
 
     def __contains__(self, name):
         return name in self.spec
@@ -300,6 +318,17 @@ class Specified(TenkoObject, metaclass=SpecifiedMetaclass):
         if kwargs: d.update(kwargs)
         for key, value in d.items():
             setattr(self, key, value)
+
+    def copy(self, **kwargs):
+        """
+        Return new instance with same spec values, but with kwargs overrides.
+        """
+        specvalues = dict(self.items())
+        for key in specvalues.keys():
+            if key in kwargs:
+                specvalues[key] = kwargs[key]
+        newobj = self.__class__(**specvalues)
+        return newobj
 
     def reset(self):
         """
