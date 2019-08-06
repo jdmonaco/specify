@@ -162,9 +162,11 @@ class SpecifiedMetaclass(type):
                 parameter.owner = cls
                 type.__setattr__(cls, name, parameter)
                 cls.spec[name] = parameter
+            debug(f'{cls!r}.__setattr__ for value {value!r}')
             cls.__dict__[name].__set__(None, value)
 
         else:
+            debug(f'{cls!r}.__setattr__ for Param {value!r}')
             type.__setattr__(cls, name, value)
 
             if is_param(value):
@@ -269,11 +271,11 @@ class Specified(TenkoObject, metaclass=SpecifiedMetaclass):
             val = getattr(self, param.attrname)
             l = hilite(f'{k}') + midlite(' = ') + lolite(f'{val!r}')
             if val != dflt:
-                l += orange(' [default: {dflt!r}]')
+                l += orange(f' [default: {dflt!r}]')
             lines = l.split('\n')
             for line in lines:
                 r += prefix + line + '\n'
-        return r + midlite(')')
+        return r + midlite(')') + '\n'
 
     def __contains__(self, name):
         return name in self.spec
@@ -334,18 +336,27 @@ class Specified(TenkoObject, metaclass=SpecifiedMetaclass):
         """
         Reset parameters to default values.
         """
-        self.update(**dict(self.defaults()))
+        Specified.update(self, **dict(self.defaults()))
 
-    def get_widgets(self, *names, exclude=None):
+    def get_widgets(self, include=None, exclude=None):
         """
         Return a tuple of Panel widget objects for Param values.
+
+        Note: Keyword arguments `include` and `exclude` should be tuples or
+        lists of Param names.
         """
-        # Use arguments or gather full list of parameter names with widgets
-        if names:
-            names = list(filter(lambda n: n in self, names))
-        else:
-            names = [name for name, p in self.params() if hasattr(p, 'widget')
-                     and p.widget is not None]
+        # Prune list of attr names that do not correspond to known Params with
+        # a non-None widget attribute
+        names = list(self) if include is None else list(include)
+        to_remove = []
+        for n in names:
+            if n in self and hasattr(self.spec[n], 'widget') and \
+                    self.spec[n].widget is not None:
+                continue
+            to_remove.append(n)
+            self.debug(f'ignoring Param {n!r} which has no widget')
+        for n in to_remove:
+            names.remove(n)
 
         # If exclusions were specified, remove those items from the list
         if exclude is not None:
@@ -353,19 +364,20 @@ class Specified(TenkoObject, metaclass=SpecifiedMetaclass):
             for exc in exclude:
                 if exc in names:
                     names.remove(exc)
+                    self.debug(f'excluding Param {n!r} from widget list')
 
         # Remove handles to old widgets that are about to be replaced
-        for name in self._widgets.keys():
-            if name in names:
-                del self._widgets[name]
+        to_remove = list(filter(lambda n: n in names, self._widgets.keys()))
+        for name in to_remove:
+            del self._widgets[name]
 
         if not names:
-            self.out('Empty list of names after exclusions', warning=True)
+            self.out('Empty list of widget names after filters', warning=True)
             return ()
 
         # Construct the widgets
         new_widgets = []
-        for name in names:
+        for name in sorted(names):
             p = self.spec[name]
             if p.widget == 'slider':
                 slider = pn.widgets.FloatSlider(
@@ -378,6 +390,8 @@ class Specified(TenkoObject, metaclass=SpecifiedMetaclass):
                 )
                 self._widgets[name] = slider
                 new_widgets.append(slider)
+                self.debug(f'create slider {slider.name!r} with value '
+                           f'{slider.value!r}')
             else:
                 self.out('Widget type {p.widget!r} not currently supported',
                          warning=True)
@@ -387,20 +401,26 @@ class Specified(TenkoObject, metaclass=SpecifiedMetaclass):
             AnyBar.toggle()
             for event in events:
                 setattr(self, event.obj.name, event.new)
+                self.debug(f'widget {event.obj.name!r} {event.type} from '
+                           f'{event.old:g} to {event.new:g}')
 
         # Register the callback with each of the sliders
         for name, widget in self._widgets.items():
             self._watchers[name] = widget.param.watch(callback, 'value')
 
-        self.debug('created {} new widgets', len(new_widgets))
         return tuple(new_widgets)
 
-    def unlink_widgets(self):
+    def unlink_widgets(self, *names):
         """
-        Remove callbacks from Panel widget objects.
+        Remove callbacks from Panel widget objects and then remove the widgets.
         """
-        for name, widget in self._widgets.items():
-            widget.param.unwatch(self._watchers[name])
+        names = list(self) if not names else list(names)
+        for n in names:
+            if n in self._widgets and self._widgets[n] is not None:
+                widget = self._widgets[n]
+                widget.param.unwatch(self._watchers[n])
+                del self._widgets[name]
+                self.debug(f'unlinked and removed {n!r} widget')
 
     def to_dict(self, subtree=None, T=None):
         """
