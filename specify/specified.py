@@ -99,7 +99,7 @@ class SpecifiedMetaclass(type):
         cls.__param_inheritance(pname, param)
         if default is not None:
             param.default = copy.copy(default)
-        cls.__dict__[pname] = param
+        type.__setattr__(cls, pname, param)
         cls.spec[pname] = param
         debug(f'added Param {pname!r} with value {param!r}')
 
