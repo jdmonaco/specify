@@ -360,7 +360,6 @@ class Specified(TenkoObject, metaclass=SpecifiedMetaclass):
 
         # If exclusions were specified, remove those items from the list
         if exclude is not None:
-            exclude = tuple((exclude,))
             for exc in exclude:
                 if exc in names:
                     names.remove(exc)
