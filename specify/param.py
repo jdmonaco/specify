@@ -111,6 +111,7 @@ class Param(object):
             return
 
         obj.__dict__[self.attrname] = value
+        debug(f'updated {obj.name}.{self.name} to {value!r}')
 
         if hasattr(obj, '_widgets') and self.name in obj._widgets:
             widget = obj._widgets[self.name]

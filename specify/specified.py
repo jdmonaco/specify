@@ -398,10 +398,10 @@ class Specified(TenkoObject, metaclass=SpecifiedMetaclass):
         # Define an event-based callback function
         def callback(*events):
             AnyBar.toggle()
-            for event in events:
+            for i, event in enumerate(events):
                 setattr(self, event.obj.name, event.new)
                 self.debug(f'widget {event.obj.name!r} {event.type} from '
-                           f'{event.old:g} to {event.new:g}')
+                           f'{event.old:g} to {event.new:g} [{i}]')
 
         # Register the callback with each of the sliders
         for name, widget in self._widgets.items():
