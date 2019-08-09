@@ -3,7 +3,7 @@ Parameter subclasses with different attributes, including associated widgets.
 """
 
 __all__ = ['is_param', 'is_specified', 'ValueType', 'Widget', 'Range',
-           'Slider']
+           'Slider', 'LogParam', 'LogSlider']
 
 
 from .utils import classlist
@@ -109,3 +109,25 @@ class Slider(Range):
         super().__init__(**kwargs)
         self.step = step
         self.widget = 'slider'
+
+
+class LogParam(Param):
+
+    """
+    A parameter that represents the base-10 exponent of an underlying value.
+    """
+
+    pass
+
+
+class LogSlider(Slider):
+
+    """
+    A slider widget that controls a log-scale value.
+    """
+
+    __slots__ = []
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.widget = 'logslider'

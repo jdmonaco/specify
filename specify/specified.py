@@ -9,6 +9,7 @@ try:
 except ImportError:
     print('Warning: install `panel` to use interactive dashboards.')
 
+from toolbox.numpy import log10
 from pouty.anybar import AnyBar
 from pouty.console import debug, ConsolePrinter, orange
 from roto.dicts import AttrDict, Tree, hilite, midlite, lolite
@@ -209,6 +210,7 @@ class Specified(TenkoObject, metaclass=SpecifiedMetaclass):
         self._initialized = False
         self._widgets = {}
         self._watchers = {}
+        prefix = kwargs.get('name', 'specified')
 
         # Build list from Specified hierarchy of Param names to instantiate
         to_instantiate = {}
@@ -225,21 +227,22 @@ class Specified(TenkoObject, metaclass=SpecifiedMetaclass):
             key = param.attrname
             new_value_from_default = copy.deepcopy(param.default)
             self.__dict__[key] = new_value_from_default
-            debug(f'init {key!r} to default {new_value_from_default!r}')
+            debug(f'init {key!r} to default {new_value_from_default!r}',
+                  prefix=prefix)
 
         # Set the value of keyword arguments
         to_consume = []
         for key, value in kwargs.items():
             if key == '_spec_class' and value != self.__class__.__name__:
-                debug(f'Serialized type name {value!r} does not match',
-                      f'class {self.klass!r}')
+                debug(f'serialized type name {value!r} does not match',
+                      f'class {self.klass!r}', prefix=prefix)
                 continue
             descriptor, _ = type(self).get_param_descriptor(key)
             if key not in self.spec:
                 continue
             setattr(self, key, value)
             to_consume.append(key)
-            debug(f'init {key!r} to {value!r} from kwargs')
+            debug(f'init {key!r} to {value!r} from kwargs', prefix=prefix)
 
         # From keyword options, either consume kwargs for Param values that
         # were set and/or produce kwargs for all specs (`spec_produce=True`) or
@@ -378,10 +381,11 @@ class Specified(TenkoObject, metaclass=SpecifiedMetaclass):
         new_widgets = []
         for name in sorted(names):
             p = self.spec[name]
-            if p.widget == 'slider':
+            if p.widget in ('slider', 'logslider'):
+                value = getattr(self, name)
                 slider = pn.widgets.FloatSlider(
                         name            = p.name,
-                        value           = getattr(self, name),
+                        value           = value,
                         start           = p.start,
                         end             = p.end,
                         step            = p.step,
@@ -389,19 +393,26 @@ class Specified(TenkoObject, metaclass=SpecifiedMetaclass):
                 )
                 self._widgets[name] = slider
                 new_widgets.append(slider)
-                self.debug(f'create slider {slider.name!r} with value '
+                self.debug(f'created {p.widget} {slider.name!r} with value '
                            f'{slider.value!r}')
             else:
-                self.out('Widget type {p.widget!r} not currently supported',
+                self.out(f'Widget type {p.widget!r} not currently supported',
                          warning=True)
 
         # Define an event-based callback function
+        prev_event = None
         def callback(*events):
+            nonlocal prev_event
             AnyBar.toggle()
-            for i, event in enumerate(events):
-                setattr(self, event.obj.name, event.new)
-                self.debug(f'widget {event.obj.name!r} {event.type} from '
-                           f'{event.old:g} to {event.new:g} [{i}]')
+            for event in events:
+                widget = event.obj
+                new_value = event.new
+                if (widget, new_value) == prev_event:
+                    continue
+                setattr(self, widget.name, new_value)
+                prev_event = (widget, new_value)
+                self.debug(f'widget {widget.name!r} {event.type} from '
+                           f'{event.old:g} to {new_value:g}')
 
         # Register the callback with each of the sliders
         for name, widget in self._widgets.items():
