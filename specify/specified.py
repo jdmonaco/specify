@@ -99,7 +99,7 @@ class SpecifiedMetaclass(type):
         param._set_names(pname)
         cls.__param_inheritance(pname, param)
         if default is not None:
-            param.default = copy.copy(default)
+            param.default = copy.deepcopy(default)
         type.__setattr__(cls, pname, param)
         cls.spec[pname] = param
         debug(f'added Param {pname!r} with value {param!r}')
@@ -153,8 +153,8 @@ class SpecifiedMetaclass(type):
         Based on:
         https://github.com/pyviz/param/blob/master/param/parameterized.py#L1973
         """
-        # Find out if there's a Parameter called name as a class attribute
-        # of this class. If not, parameter is None.
+        # Find out if there's a Parameter with the given `name` as a class
+        # attribute of this class. If not, `parameter` is None.
         parameter, owner = cls.get_param_descriptor(name)
 
         if parameter and not is_param(value):
@@ -210,6 +210,7 @@ class Specified(TenkoObject, metaclass=SpecifiedMetaclass):
         self._initialized = False
         self._widgets = {}
         self._watchers = {}
+        self.spec_local = Specs()
         prefix = kwargs.get('name', 'specified')
 
         # Build list from Specified hierarchy of Param names to instantiate
@@ -281,7 +282,7 @@ class Specified(TenkoObject, metaclass=SpecifiedMetaclass):
         return r + midlite(')') + '\n'
 
     def __contains__(self, name):
-        return name in self.spec
+        return name in self.spec or name in self.spec_local
 
     def __getitem__(self, key):
         return getattr(self, key)
@@ -290,13 +291,39 @@ class Specified(TenkoObject, metaclass=SpecifiedMetaclass):
         setattr(self, key, value)
 
     def __iter__(self):
-        return iter(self.spec.keys())
+        for key, _ in self.params():
+            yield key
+
+    def add_param(self, pname, param, default=None):
+        """
+        Add a instance-local Param object to this Specified instance.
+        """
+        cls = self.__class__
+        if pname in cls.__dict__:
+            self.out(f'Instance Param {pname!r} will override class Param with '
+                     f'value {cls.__dict__[pname]!r}', warning=True)
+        if pname in self.__dict__:
+            self.out(f'Instance Param {pname!r} conflicts with instance Param '
+                     f'with value {self.__dict__[pname]!r}', error=True)
+            raise ValueError('instance Param conflict')
+
+        param._set_names(pname)
+        if default is not None:
+            param.default = copy.deepcopy(default)
+        param.owner = self
+        self.spec_local[pname] = param
+        type.__setattr__(self.__class__, pname, param) # install the descriptor
+        if param.attrname not in self.__dict__:
+            self.__dict__[param.attrname] = copy.deepcopy(param.default)
+        self.debug(f'added instance Param {pname!r} with value {param!r}')
 
     def params(self):
         """
         Iterate over (name, Param object) tuples for all parameters.
         """
         for name, p in self.spec.items():
+            yield (name, p)
+        for name, p in self.spec_local.items():
             yield (name, p)
 
     def items(self):
@@ -310,8 +337,8 @@ class Specified(TenkoObject, metaclass=SpecifiedMetaclass):
         """
         Iterate over (name, default) tuples for all parameters.
         """
-        for name, p in self.params():
-            yield (name, p.default)
+        for name, param in self.params():
+            yield (name, param.default)
 
     def update(self, *args, **kwargs):
         """
@@ -339,7 +366,7 @@ class Specified(TenkoObject, metaclass=SpecifiedMetaclass):
         """
         Reset parameters to default values.
         """
-        Specified.update(self, **dict(self.defaults()))
+        Specified.update(self, dict(self.defaults()))
 
     def get_widgets(self, include=None, exclude=None):
         """
@@ -353,9 +380,14 @@ class Specified(TenkoObject, metaclass=SpecifiedMetaclass):
         names = list(self) if include is None else list(include)
         to_remove = []
         for n in names:
-            if n in self and hasattr(self.spec[n], 'widget') and \
-                    self.spec[n].widget is not None:
-                continue
+            if n in self:
+                if n in self.spec and hasattr(self.spec[n], 'widget') and \
+                        self.spec[n].widget is not None:
+                    continue
+                if n in self.spec_local and \
+                        hasattr(self.spec_local[n], 'widget') and \
+                            self.spec_local[n].widget is not None:
+                    continue
             to_remove.append(n)
             self.debug(f'ignoring Param {n!r} which has no widget')
         for n in to_remove:
@@ -380,7 +412,10 @@ class Specified(TenkoObject, metaclass=SpecifiedMetaclass):
         # Construct the widgets
         new_widgets = []
         for name in sorted(names):
-            p = self.spec[name]
+            if name in self.spec:
+                p = self.spec[name]
+            elif name in self.spec_local:
+                p = self.spec_local[name]
             if p.widget in ('slider', 'logslider'):
                 value = getattr(self, name)
                 slider = pn.widgets.FloatSlider(
@@ -439,7 +474,7 @@ class Specified(TenkoObject, metaclass=SpecifiedMetaclass):
         if T is None:
             T = Tree()
         if subtree is None:
-            subtree = self.spec
+            subtree = self
         for name, value in subtree.items():
             if hasattr(value, 'items'):
                 self.to_dict(value, T[name])
