@@ -221,7 +221,6 @@ class Specified(TenkoObject, metaclass=SpecifiedMetaclass):
             for name, value in vars(cls).items():
                 if is_param(value) and name != 'name':
                     to_instantiate[name] = value
-                    self.spec[name] = value
 
         # Set the internal instance attribute values to copied Param defaults
         for param in to_instantiate.values():
@@ -238,8 +237,8 @@ class Specified(TenkoObject, metaclass=SpecifiedMetaclass):
                 debug(f'serialized type name {value!r} does not match',
                       f'class {self.klass!r}', prefix=prefix)
                 continue
-            descriptor, _ = type(self).get_param_descriptor(key)
-            if key not in self.spec:
+            if key not in self.spec or value is None:
+                debug(f'skipping key {key!r} with value {value!r}')
                 continue
             setattr(self, key, value)
             to_consume.append(key)
