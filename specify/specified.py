@@ -62,11 +62,11 @@ class SpecifiedMetaclass(type):
                             continue
                         p = type(value)(default=copy.deepcopy(clsvalue))
                         specs[key] = clsdict[key] = p
-                        debug(f'copied ancestor for {key!r} in '
-                              f'{superclass!r} as {p!r}')
+                        debug(f'copied {key!r} ancestor from {superclass!r} '
+                              f'as {p!r}')
                     else:
                         specs[key] = value
-                        debug(f'found ancestor {key!r} in {superclass!r}')
+                        debug(f'found {key!r} ancestor in {superclass!r}')
 
         return super().__new__(metacls, name, bases, clsdict)
 
@@ -293,7 +293,7 @@ class Specified(TenkoObject, metaclass=SpecifiedMetaclass):
         for key, _ in self.params():
             yield key
 
-    def add_param(self, pname, param, default=None):
+    def add_param(self, pname, param, *, value=None):
         """
         Add a instance-local Param object to this Specified instance.
         """
@@ -307,13 +307,18 @@ class Specified(TenkoObject, metaclass=SpecifiedMetaclass):
             raise ValueError('instance Param conflict')
 
         param._set_names(pname)
-        if default is not None:
-            param.default = copy.deepcopy(default)
         param.owner = self
+        param.default = copy.deepcopy(param.default)
         self.spec_local[pname] = param
         type.__setattr__(self.__class__, pname, param) # install the descriptor
-        if param.attrname not in self.__dict__:
+
+        if value is not None:
+            self.__dict__[param.attrname] = copy.deepcopy(value)
+        elif param.attrname in self.__dict__:
+            pass
+        else:
             self.__dict__[param.attrname] = copy.deepcopy(param.default)
+
         self.debug(f'added instance Param {pname!r} with value {param!r}')
 
     def params(self):
