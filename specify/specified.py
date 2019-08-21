@@ -387,13 +387,14 @@ class Specified(TenkoObject, metaclass=SpecifiedMetaclass):
             if n in self:
                 if n in self.spec and hasattr(self.spec[n], 'widget') and \
                         self.spec[n].widget is not None:
+                    self.debug(f'found Param {n!r} with widget')
                     continue
                 if n in self.spec_local and \
                         hasattr(self.spec_local[n], 'widget') and \
                             self.spec_local[n].widget is not None:
+                    self.debug(f'found instance Param {n!r} with widget')
                     continue
             to_remove.append(n)
-            self.debug(f'ignoring Param {n!r} which has no widget')
         for n in to_remove:
             names.remove(n)
 
@@ -410,7 +411,7 @@ class Specified(TenkoObject, metaclass=SpecifiedMetaclass):
             del self._widgets[name]
 
         if not names:
-            self.out('Empty list of widget names after filters', warning=True)
+            self.debug('empty list of widget names after filters')
             return ()
 
         # Construct the widgets
