@@ -16,8 +16,8 @@ class Param(object):
     A class attribute instance defining properties of inheritable values.
     """
 
-    __slots__ = ['name', 'default', 'units', 'doc', 'constant', 'owner',
-                 'attrname']
+    __slots__ = ('name', 'default', 'units', 'doc', 'constant', 'owner',
+                 'attrname', 'callback')
 
     def __init__(self, default=None, units=None, doc=None, constant=False):
         self.name = None
@@ -80,7 +80,9 @@ class Param(object):
                                   'should only be owned by a single class.')
         self.name = name
         self.attrname = f'_{name}_specified_value'
-        debug(f'set names: {self.name!r} and {self.attrname!r}')
+        self.callback = f'_{name}_changed'
+        debug(f'set names: {self.name!r} and {self.attrname!r}',
+                prefix='Param')
 
     def __get__(self, obj, cls):
         """
@@ -110,15 +112,23 @@ class Param(object):
         if value == obj.__dict__[self.attrname]:
             return
 
+        oldvalue = obj.__dict__[self.attrname]
         obj.__dict__[self.attrname] = value
-        debug(f'updated {obj.name}.{self.name} to {value!r}')
+        debug(f'updated {obj.name}.{self.name} from {oldvalue!r} to {value!r}',
+                prefix='Param')
 
+        # Update this Param's widget if defined in the object
         if hasattr(obj, '_widgets') and self.name in obj._widgets:
             widget = obj._widgets[self.name]
             if widget.value != value:
                 widget.value = value
-                # widget.param.trigger('value')
-                # debug(f'updated widget {self.name!r} to {value!r}')
+
+        # Call this Param's callback if defined and the object is initialized.
+        #
+        # Note: Callback methods should be named `_<paramname>_changed` and
+        # take three arguments: (param_object, old_value, new_value)
+        if obj._initialized and hasattr(obj, self.callback):
+            getattr(obj, self.callback)(self, oldvalue, value)
 
     def __getstate__(self):
         state = {}

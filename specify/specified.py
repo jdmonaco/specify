@@ -423,21 +423,28 @@ class Specified(TenkoObject, metaclass=SpecifiedMetaclass):
                 p = self.spec_local[name]
             if p.widget in ('slider', 'logslider'):
                 value = getattr(self, name)
-                slider = pn.widgets.FloatSlider(
+                widget = pn.widgets.FloatSlider(
                         name            = p.name,
-                        value           = value,
+                        value           = p.start if value is None else value,
                         start           = p.start,
                         end             = p.end,
                         step            = p.step,
                         callback_policy = 'mouseup',
                 )
-                self._widgets[name] = slider
-                new_widgets.append(slider)
-                self.debug(f'created {p.widget} {slider.name!r} with value '
-                           f'{slider.value!r}')
+            elif p.widget == 'checkbox':
+                value = bool(getattr(self, name))
+                widget = pn.widgets.Checkbox(
+                        name  = p.name,
+                        value = False if value is None else value,
+                )
             else:
                 self.out(f'Widget type {p.widget!r} not currently supported',
                          warning=True)
+                continue
+            self._widgets[name] = widget
+            new_widgets.append(widget)
+            self.debug(f'created {p.widget} {widget.name!r} with value '
+                       f'{widget.value!r}')
 
         # Define an event-based callback function
         prev_event = None
@@ -452,9 +459,9 @@ class Specified(TenkoObject, metaclass=SpecifiedMetaclass):
                 setattr(self, widget.name, new_value)
                 prev_event = (widget, new_value)
                 self.debug(f'widget {widget.name!r} {event.type} from '
-                           f'{event.old:g} to {new_value:g}')
+                           f'{event.old} to {new_value}')
 
-        # Register the callback with each of the sliders
+        # Register the callback with each of the widgets
         for name, widget in self._widgets.items():
             self._watchers[name] = widget.param.watch(callback, 'value')
 

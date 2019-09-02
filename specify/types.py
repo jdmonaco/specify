@@ -2,8 +2,8 @@
 Parameter subclasses with different attributes, including associated widgets.
 """
 
-__all__ = ['is_param', 'is_specified', 'ValueType', 'Widget', 'Range',
-           'Slider', 'LogParam', 'LogSlider']
+__all__ = ('is_param', 'is_specified', 'ValueType', 'Widget', 'Range',
+           'Slider', 'LogParam', 'LogSlider', 'Checkbox')
 
 
 from .utils import classlist
@@ -131,3 +131,16 @@ class LogSlider(Slider):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.widget = 'logslider'
+
+
+class Checkbox(Widget):
+
+    """
+    A checkbox widget that controls a boolean parameter.
+    """
+
+    __slots__ = []
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.widget = 'checkbox'
