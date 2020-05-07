@@ -44,8 +44,8 @@ class ValueType(Param):
 
     __slots__ = ['dtype']
 
-    def __init__(self, dtype=None, **kwargs):
-        super().__init__(**kwargs)
+    def __init__(self, default=None, dtype=None, **kwargs):
+        super().__init__(default=default, **kwargs)
         self.dtype = dtype
 
     def check_type(self):
@@ -65,8 +65,8 @@ class Widget(Param):
 
     __slots__ = ['widget']
 
-    def __init__(self, widget=None, **kwargs):
-        super().__init__(**kwargs)
+    def __init__(self, default=None, widget=None, **kwargs):
+        super().__init__(default=default, **kwargs)
         self.widget = widget
 
 
@@ -78,8 +78,8 @@ class Range(Param):
 
     __slots__ = ['start', 'end']
 
-    def __init__(self, start=None, end=None, **kwargs):
-        super().__init__(**kwargs)
+    def __init__(self, default=None, start=None, end=None, **kwargs):
+        super().__init__(default=default, **kwargs)
         self.start = start
         self.end = end
 
@@ -105,8 +105,8 @@ class Slider(Range):
 
     __slots__ = ['step', 'widget']
 
-    def __init__(self, step=None, **kwargs):
-        super().__init__(**kwargs)
+    def __init__(self, default=None, step=None, **kwargs):
+        super().__init__(default=default, **kwargs)
         self.step = step
         self.widget = 'slider'
 
