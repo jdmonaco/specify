@@ -1,9 +1,3 @@
-# Toolbox: Collection of Tool Packages
+# specify &mdash; Automatic heritable parameter specification framework
 
-This is the readme file for the source code used in the Toolbox project.
-
-## Files
-
-* `LICENSE.txt`: the license file
-* `README.md`: this README file
-* `setup.py`: setuptools installation file
+This is a placeholder README. More to come!
